@@ -186,7 +186,7 @@ var _ = Describe("CloudControllerManager", func() {
 
 	Describe("Test", func() {
 		Context("Deploying", func() {
-			Context("a Wordpress Helm Chart (with a stateful & stateless component)", func() {
+			Context("secret test", func() {
 				BeforeEach(func() {
 					By("Initializing Helm")
 					helmInit()
@@ -200,7 +200,49 @@ var _ = Describe("CloudControllerManager", func() {
 					deleteHelmChart(wordpressName)
 				})
 
-				It("should successfully deploy Wordpress helm chart and check its components", func() {
+				It("should confirm things work after token secret rotation.", func() {
+					By("deleting token secrets from kube-system")
+					tokenSecrets, err := f.Cluster.GetTokenSecrets("kube-system")
+					Expect(err).NotTo(HaveOccurred())
+					Expect(len(tokenSecrets.Items)).To(Not(BeZero()))
+
+					toDelete := []string{
+						"default-token-",
+						"csi-controller-sa-token-",
+						"generic-garbage-collector-token-",
+						"ccm-user-token-",
+						"bootstrap-signer-token-",
+						"namespace-controller-token-",
+						"resourcequota-controller-token-",
+						"token-cleaner-token-",
+						"lke-admin-token-",
+					}
+					fmt.Printf("listing secrets:\n")
+					for _, s := range tokenSecrets.Items {
+						for _, v := range toDelete {
+							if strings.HasPrefix(s.Name, v) {
+								fmt.Printf("deleting %s - data: ...%s\n", s.Name, s.Data["token"][len(s.Data["token"])-64:])
+								err = f.Cluster.DeleteSecret(s.Name, "kube-system")
+								Expect(err).NotTo(HaveOccurred())
+							}
+						}
+					}
+					fmt.Printf("waiting for 30 seconds and listing again:\n")
+					time.Sleep(time.Second * 30)
+
+					tokenSecrets, err = f.Cluster.GetTokenSecrets("kube-system")
+					Expect(err).NotTo(HaveOccurred())
+					Expect(len(tokenSecrets.Items)).To(Not(BeZero()))
+
+					fmt.Printf("listing secrets:\n")
+					for _, s := range tokenSecrets.Items {
+						for _, v := range toDelete {
+							if strings.HasPrefix(s.Name, v) {
+								fmt.Printf("got %s - data: ...%s\n", s.Name, s.Data["token"][len(s.Data["token"])-64:])
+							}
+						}
+					}
+
 					By("Getting Wordpress URL")
 					url, err := f.Cluster.GetHTTPEndpoints(wordpressName)
 					Expect(err).NotTo(HaveOccurred())
